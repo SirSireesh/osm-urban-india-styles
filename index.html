@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Style test</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    #map { width: 100%; height: 100%; }
+
+    #panel {
+      position: absolute; top: 10px; left: 10px; z-index: 1;
+      background: #fff; border: 1px solid #ccc; border-radius: 4px;
+      font: 12px/1.4 monospace; padding: 10px; max-width: 480px;
+      max-height: 80vh; overflow: auto;
+    }
+    #panel h1 { font-size: 13px; margin: 0 0 8px; }
+    #panel button { margin-right: 6px; }
+    #panel pre { margin: 0; white-space: pre-wrap; }
+    #log div { border-top: 1px solid #eee; padding: 2px 0; }
+    #log .err { color: #b00; }
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div id="panel">
+  <h1>Style test</h1>
+  <div>
+    <button id="btn-urban">urban</button>
+    <button id="btn-urban-dark">urban-dark</button>
+    <span id="status"></span>
+  </div>
+  <p>Click the map to inspect features.</p>
+  <pre id="inspect"></pre>
+  <div id="log"></div>
+</div>
+
+<script type="importmap">
+  { "imports": { "fflate": "https://unpkg.com/fflate@0.8.2/esm/browser.js" } }
+</script>
+<script type="module">
+  import * as pmtiles from 'https://unpkg.com/pmtiles@4.5.0/dist/esm/index.js';
+
+  const STYLE_PATHS = {
+    'urban': 'styles/urban/style.json',
+    'urban-dark': 'styles/urban-dark/style.json'
+  };
+
+  // Initial view over central Delhi
+  const CENTER = [77.2094, 28.6139];
+  const ZOOM = 12;
+
+  const protocol = new pmtiles.Protocol();
+  maplibregl.addProtocol('pmtiles', protocol.tile);
+
+  const map = new maplibregl.Map({
+    container: 'map',
+    center: CENTER,
+    zoom: ZOOM
+  });
+
+  const $status = document.getElementById('status');
+  const $inspect = document.getElementById('inspect');
+  const $log = document.getElementById('log');
+
+  function log(msg, isErr) {
+    const line = document.createElement('div');
+    if (isErr) line.className = 'err';
+    line.textContent = msg;
+    $log.prepend(line);
+  }
+
+  // Surface every error the style produces instead of failing silently
+  map.on('error', e => log(e.error && e.error.message || JSON.stringify(e.error), true));
+
+  map.on('click', e => {
+    const feats = map.queryRenderedFeatures(e.point);
+    if (feats.length === 0) {
+      $inspect.textContent = 'no features';
+      return;
+    }
+
+    const lines = feats.map(f =>
+      `${f.layer.id} (${f.sourceLayer})\n` +
+      JSON.stringify(f.properties, null, 1)
+    );
+    $inspect.textContent = lines.join('\n---\n');
+  });
+
+  async function load(name) {
+    $status.textContent = `loading ${name}...`;
+
+    const res = await fetch(STYLE_PATHS[name]);
+    if (!res.ok) {
+      log(`style fetch failed: ${res.status} ${STYLE_PATHS[name]}`, true);
+      return;
+    }
+
+    map.setStyle(await res.json());
+    $status.textContent = name;
+  }
+
+  for (const [name, id] of Object.entries({ 'urban': 'btn-urban', 'urban-dark': 'btn-urban-dark' })) {
+    document.getElementById(id).onclick = () => load(name);
+  }
+
+  load('urban');
+</script>
+</body>
+</html>
